@@ -30,4 +30,6 @@ Revision history for Perl extension Chess::PGN::Filter.
 0.06  Fri Mar 29 10:20:57 2002
         - edit Makefile.PL to reflect dependance on Chess::PGN::EPD 0.08
 	- added name and email to Makefile.PL
-
+0.07  Sat Mar 30 09:08:58 2002
+	- this time include the edited Makefile.PL in the distribution
+	- take advantage of the golden opp. to correct the version number
