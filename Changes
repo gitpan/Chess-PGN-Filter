@@ -35,4 +35,6 @@ Revision history for Perl extension Chess::PGN::Filter.
 	- take advantage of the golden opp. to correct the version number
 0.08  Sun Mar 31 09:00:29 2002
 	- add the rest of the dependance list to Makefile.PL
-
+0.09  Sun Mar 31 13:28:35 2002
+	- next include the revised version of Makefile.PL in the distrbution again!!!
+	- and as before again correct the version number!!!

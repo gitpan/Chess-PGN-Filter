@@ -4,7 +4,11 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'		=> 'Chess::PGN::Filter',
     'VERSION_FROM'	=> 'Filter.pm', # finds $VERSION
-    'PREREQ_PM'		=> {Chess::PGN::EPD => 0.08}, # e.g., Module::Name => 1.1
+    'PREREQ_PM'		=> {
+        Chess::PGN::EPD => 0.08,
+        Text::DelimMatch => 1.04,
+        Chess::PGN::Parse => 0.01
+    }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?    ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM => 'Filter.pm', # retrieve abstract from module
        AUTHOR     => 'Hugh S. Myers <hsmyers@sdragons.com>') : ()),
