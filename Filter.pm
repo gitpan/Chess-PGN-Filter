@@ -65,7 +65,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw(
     &filter	
 );
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 
 sub filter {
@@ -90,7 +90,7 @@ sub filterDOM {
     my $filetext;
     
     {
-        $/ = undef;
+        local $/ = undef;
         open(FILE,$file) or die "Couldn't open file:$file $!\n";
         $filetext = <FILE>;
         close(FILE);
@@ -105,7 +105,7 @@ sub filterTEXT {
     my $filetext;
     
     {
-        $/ = undef;
+        local $/ = undef;
         open(FILE,$file) or die "Couldn't open file:$file $!\n";
         $filetext = <FILE>;
         close(FILE);
@@ -326,6 +326,22 @@ sub paragraph {
     return split(/\|/,$s);
 }
 
+#sub deLIMIT {
+#    my $t = shift;
+#    my $startdelim = shift;
+#    my $enddelim = shift;
+#    my $escape = shift;
+#    my $mc = new Text::DelimMatch($startdelim,$enddelim,$escape);
+#    my ($prefix,$match,$remainder) = $mc->match(' ' . $t . ' ');
+#
+#    if ($match) {
+#        return ($prefix or '') . ($remainder or ''),$mc->strip_delim($match);
+#    }
+#    else {
+#        return $t,'';
+#    }
+#}
+
 sub deLIMIT {
     my $t = shift;
     my $startdelim = shift;
@@ -335,7 +351,9 @@ sub deLIMIT {
     my ($prefix,$match,$remainder) = $mc->match(' ' . $t . ' ');
 
     if ($match) {
-        return ($prefix or '') . ($remainder or ''),$mc->strip_delim($match);
+        $match =~ s/^$startdelim//;
+        $match =~ s/$enddelim$//;
+        return ($prefix or '') . ($remainder or ''),$match;
     }
     else {
         return $t,'';
@@ -378,7 +396,7 @@ sub filterXML {
     my $filetext;
     
     {
-        $/ = undef;
+        local $/ = undef;
         open(FILE,$file) or die "Couldn't open file:$file $!\n";
         $filetext = <FILE>;
         close(FILE);
@@ -474,7 +492,7 @@ sub dom2XMLGametext {
         print "$tabs\t<MOVENUMBER>$element->{'Movenumber'}</MOVENUMBER>\n";
         print "$tabs\t<MOVE>$element->{'Movetext'}</MOVE>\n";
         if ($element->{'Rav'}) {
-            dom2XMLGametext($parms,$level + 1,$result,$element->{'Rav'});
+            dom2XMLGametext($parms,$level + 1,'UNKNOWN',$element->{'Rav'});
         }
         print "$tabs\t<COMMENT>$element->{'Comment'}</COMMENT>\n" if $element->{'Comment'};
         if ($element->{'Nag'}) {

@@ -6,8 +6,9 @@ WriteMakefile(
     'VERSION_FROM'	=> 'Filter.pm', # finds $VERSION
     'PREREQ_PM'		=> {
         Chess::PGN::EPD => 0.08,
-        Text::DelimMatch => 1.04,
-        Chess::PGN::Parse => 0.01
+        Text::DelimMatch => 1.01,
+        Chess::PGN::Parse => 0.01,
+        Test => 1.15,
     }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?    ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM => 'Filter.pm', # retrieve abstract from module
