@@ -1,3 +1,53 @@
+package Parms;
+
+use strict;
+use warnings;
+use Chess::PGN::EPD;
+use vars '$AUTOLOAD';
+use Carp;
+
+sub new {
+    my ($class,%arg) = @_;
+    bless {
+        _filtertype => $arg{filtertype},
+        _source => $arg{source},
+        _fen => $arg{fen} || 'no',
+        _position => $arg{position} || 'yes',
+        _type => $arg{type} || ($arg{font} ? $font2map{$arg{font}} : 'marroquin'),
+        _border => $arg{single} || 'single',
+        _corner => $arg{square} || 'square',
+        _legend => $arg{legend} || 'no',
+        _size => $arg{size} || '5',
+        _font => $arg{font} || 'Chess Kingdom',
+        _ECO => $arg{ECO} || 'yes',
+        _NIC => $arg{NIC} || 'no',
+        _Opening => $arg{Opening} || 'yes',
+        _substitutions => $arg{substitutions},
+        _exclude => $arg{exclude},
+        _comments => $arg{comments} || 'yes',
+        _nags => $arg{nags} || 'yes',
+        _ravs => $arg{ravs} || 'yes',
+        _sticky => $arg{sticky} || 'yes',
+        _autoround => $arg{autoround} || 'yes',
+        _event => '',
+        _site => '',
+        _date => '',
+        _round => '',
+    }, $class;
+}
+
+sub AUTOLOAD {
+    my ($self,$newval) = @_;
+
+    $AUTOLOAD =~ /.*::get(_\w+)/ and return $self->{$1};
+    $AUTOLOAD =~ /.*::set(_\w+)/ and do { $self->{$1} = $newval; return };
+    $AUTOLOAD =~ /.*::if(_\w+)/ and return ($self->{$1} eq 'yes');
+    croak "No such method: $AUTOLOAD\n";
+}
+
+sub DESTROY {
+}
+
 package Chess::PGN::Filter;
 
 use 5.006;
@@ -6,6 +56,7 @@ use warnings;
 use Chess::PGN::Parse;
 use Chess::PGN::EPD;
 use Text::DelimMatch;
+use Data::Dumper;
 
 require Exporter;
 
@@ -14,7 +65,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw(
     &filter	
 );
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 
 sub filter {
@@ -25,171 +76,235 @@ sub filter {
     elsif ($parameters{'filtertype'} eq 'TEXT') {
         filterTEXT(@_);
     }
+    elsif ($parameters{'filtertype'} eq 'DOM') {
+        filterDOM(@_);
+    }
     else {
     	die "Unknown filtertype: '$parameters{'filtertype'}' not supported.\n";
     }
 }
 
-sub filterTEXT {
-    my %parameters = @_;
-    my $file = $parameters{'source'} or die "Missing source parameter: $!\n";
-    my $substitutions = $parameters{'substitute'}; 
-    my ($comments,$ravs,$nags,$ECO,$NIC,$Opening) = ('no','no','no','yes','no','yes');
-    $comments = lc($parameters{'comments'}) if exists($parameters{'comments'});
-    $ravs = lc($parameters{'ravs'}) if exists($parameters{'ravs'});
-    $nags = lc($parameters{'nags'}) if exists($parameters{'nags'});
-    $ECO = lc($parameters{'ECO'}) if exists($parameters{'ECO'});
-    $NIC = lc($parameters{'NIC'}) if exists($parameters{'NIC'});
-    $Opening = lc($parameters{'Opening'}) if exists($parameters{'Opening'});
-    my $pgn = new Chess::PGN::Parse($file) or die "Can't open $file: $!\n";
-    my $games_ref = $pgn->read_all({save_comments => 'yes'});
-    my $arrayref;
-    my @moves;
-    my %comments;
-    my %tags;
-    my %ravs;
-    my %nags;
-    my $result;
-    my $date;
-    my @date;
-    my @epd;
+sub filterDOM {
+    my $parms = new Parms(@_);
+    my $file = $parms->get_source();
+    my $filetext;
+    
+    {
+        $/ = undef;
+        open(FILE,$file) or die "Couldn't open file:$file $!\n";
+        $filetext = <FILE>;
+        close(FILE);
+    }
+    print Dumper(getDOM($filetext)),"\n";
+}
 
-    foreach  (@{$games_ref}) {
+sub filterTEXT {
+    my $parms = new Parms(@_);
+    my $file = $parms->get_source();
+    my @DOM;
+    my $filetext;
+    
+    {
+        $/ = undef;
+        open(FILE,$file) or die "Couldn't open file:$file $!\n";
+        $filetext = <FILE>;
+        close(FILE);
+    }
+    @DOM = getDOM($filetext);
+    foreach (@DOM) {
+        my $termination =  ($_->{'Tags'}->{'Result'} =~ /^1-0|0-1|1\/2-1\/2|\*$/ ? $_->{'Tags'}->{'Result'} : '*');
         my $movetext;
         my $move = 1;
-        my $termination;
-        my $n = 1;
-        my $white;
-        my $ckey;
 
-        $arrayref = $_;
-        @moves = ();
-        %comments = ();
-        %tags = ();
-        %nags = ();
-        %ravs = ();
-        foreach my $key  (keys %{$arrayref}) {
-            my $ref = %{$arrayref}->{$key};
-            if (ref($ref)) {
-                if ($key eq 'GameMoves') {
-                    @moves = @{$ref};
-                }
-                elsif ($key eq 'GameComments') {
-                    %comments = %{$ref};
-                    foreach  (keys %comments) {
-                        my $t = $comments{$_};
-                        my $NAG;
-                        my $RAV;
-                        my $COMMENT;
-
-                        ($t,$RAV) = deLIMIT($t,'\(','\)');
-                        ($t,$COMMENT) = deLIMIT($t,'\{','\}');
-                        ($t,$NAG) = deLIMIT($t,'\$','\D');
-                        if ($RAV) {
-                            $ravs{$_} = $RAV;
+        domExTags($parms,$_->{'Tags'}) if $parms->get_exclude();
+        domSticky($parms,$_->{'Tags'}) if $parms->if_sticky();
+        domAutoround($parms,$_->{'Tags'}) if $parms->if_autoround();
+        domTaxonomy($parms,$_->{'Gametext'},$_->{'Tags'}) if doTax($parms);
+        foreach  my $key ('Event','Site','Date','Round','White','Black','Result') {
+            if ($_->{'Tags'}->{$key}) {
+                if ($parms->get_substitutions()) {
+                    while (my ($one,$another) = each(%{$parms->get_substitutions()})) {
+                        if ($_->{'Tags'}->{$key} =~ /$one/) {
+                            $_->{'Tags'}->{$key} =~ s/$one/$another/;
                         }
-                        if ($NAG ne '') {
-                            $nags{$_} = $NAG;
-                        }
-                        if ($COMMENT) {
-                            $comments{$_} = $COMMENT;
-                        }
-                        else {
-                        	delete($comments{$_});
-                        }
-                   }
-                }
-            }
-            elsif ($ref) {
-                if ($key ne 'Game') {
-                    $tags{$key} = $ref;
-                }
-            }
-        }
-        if (exists($tags{'ECO'})) {
-            my $tax = $tags{'ECO'};
-
-            if ($tax eq '?' or $tax eq '') {
-                $tags{'ECO'} = epdcode('ECO',\@epd)
-            }
-        }
-        else {
-            $tags{'ECO'} = epdcode('ECO',\@epd) if $ECO;
-        }
-        if (exists($tags{'NIC'})) {
-            my $tax = $tags{'NIC'};
-
-            if ($tax eq '?' or $tax eq '') {
-                $tags{'NIC'} = epdcode('NIC',\@epd)
-            }
-        }
-        else {
-            $tags{'NIC'} = epdcode('NIC',\@epd) if $NIC;
-        }
-        if (exists($tags{'Opening'})) {
-            my $tax = $tags{'Opening'};
-
-            if ($tax eq '?' or $tax eq '') {
-                $tags{'Opening'} = epdcode('Opening',\@epd);
-            }
-        }
-        else {
-            $tags{'Opening'} = epdcode('Opening',\@epd) if $Opening;
-        }
-        $termination =  ($tags{'Result'} =~ /^1-0|0-1|1\/2-1\/2|\*$/ ? $tags{'Result'} : '*');
-        foreach  ('Event','Site','Date','Round','White','Black','Result') {
-            if ($substitutions) {
-                while (my ($one,$another) = each(%{$substitutions})) {
-                    if ($tags{$_} =~ /$one/) {
-                        $tags{$_} =~ s/$one/$another/;
                     }
                 }
+                print "[$key \"$_->{'Tags'}->{$key}\"]\n";
+                delete($_->{'Tags'}->{$key});
             }
-            print "[",$_," \"$tags{$_}\"]\n";
-            delete($tags{$_});
         }
-        foreach  (sort keys %tags) {
-            print "[",$_," \"$tags{$_}\"]\n";
+        foreach my $key (sort keys %{$_->{'Tags'}}) {
+            print "[$key \"$_->{'Tags'}->{$key}\"]\n";
         }
         print "\n";
-        foreach (@moves) {
-            $_ =~ s/0/O/g;
-            if ($n % 2) {
-                $ckey = "${move}w";
-                $movetext .= "$move. ";
-            }
-            else {
-                $ckey = "${move}b";
-                $move++;
-            }
-            $movetext .= "$_ ";
-            if (%comments and exists($comments{$ckey})) {
-                my $s = $comments{$ckey};
-
-                $movetext .= '(' . $s . ')' if ($comments eq 'yes');;
-            }
-            if (%nags and exists($nags{$ckey})) {
-                my $s = $nags{$ckey};
-                if ($s) {
-                    if ($s < 6) {
-                        chop($movetext);
-                        $movetext .= NAG($s) . ' ';
-                    }
-                    else {
-                        $movetext .= '{' . $s . '}' if ($nags eq 'yes');
-                    }
-                }                
-            }
-            if (%ravs and exists($ravs{$ckey})) {
-                my $s = $ravs{$ckey};
-                
-                $movetext .= '[' . $s . ']' if ($ravs eq 'yes');;
-            }
-            $n++;
-        }
+        $movetext = domTEXTGametext($parms,$move,$_->{'Gametext'});
         print join("\n",paragraph($movetext . $termination,78)),"\n\n";
-        $movetext = '';
     }
+}
+
+sub doTax {
+    my $parms = shift;
+
+    return ($parms->if_ECO() or $parms->if_NIC() or $parms->if_Opening());
+}
+
+sub domExTags {
+    my $parms = shift;
+    my $tag = shift;
+    my $array = $parms->get_exclude();
+
+    foreach  (@$array) {
+        if (exists($tag->{$_})) {
+            delete($tag->{$_});
+        }
+    }
+
+}
+
+sub domAutoround {
+    my $parms = shift;
+    my $tag = shift;
+
+    if (exists($tag->{'Round'})) {
+        my $value = $tag->{'Round'};
+
+        if ($value eq '' or $value eq '?') {
+            my $round = $parms->get_round();
+
+            $tag->{'Round'} = ++$round;
+            $parms->set_round($round);
+        }
+        else {
+        	$parms->set_round($value);
+        }
+    }
+}
+
+sub domSticky {
+    my $parms = shift;
+    my $tag = shift;
+
+    if (exists($tag->{'Event'})) {
+        my $value = $tag->{'Event'};
+
+        if ($value eq '' or $value eq '?') {
+            $tag->{'Event'} = $parms->get_event();
+        }
+        else {
+        	$parms->set_event($value);
+        }
+    }
+    if (exists($tag->{'Site'})) {
+        my $value = $tag->{'Site'};
+
+        if ($value eq '' or $value eq '?') {
+            $tag->{'Site'} = $parms->get_site();
+        }
+        else {
+        	$parms->set_site($value);
+        }
+    }
+    if (exists($tag->{'Date'})) {
+        my $value = $tag->{'Date'};
+
+        if ($value eq '' or $value eq '??.??.??') {
+            $tag->{'Date'} = $parms->get_date();
+        }
+        else {
+        	$parms->set_date($value);
+        }
+    }
+}
+
+sub domTaxonomy {
+    my $parms = shift;
+    my $gametext = shift;
+    my $tag = shift;
+    my @epd = reverse domEPD($gametext);
+
+    if (exists($tag->{'ECO'})) {
+        my $tax = $tag->{'ECO'};
+
+        if ($tax eq '?' or $tax eq '') {
+            $tag->{'ECO'} = epdcode('ECO',\@epd)
+        }
+    }
+    else {
+        $tag->{'ECO'} = epdcode('ECO',\@epd) if $parms->if_ECO();
+    }
+    if (exists($tag->{'NIC'})) {
+        my $tax = $tag->{'NIC'};
+
+        if ($tax eq '?' or $tax eq '') {
+            $tag->{'NIC'} = epdcode('NIC',\@epd)
+        }
+    }
+    else {
+        $tag->{'NIC'} = epdcode('NIC',\@epd) if $parms->if_NIC();
+    }
+    if (exists($tag->{'Opening'})) {
+        my $tax = $tag->{'Opening'};
+
+        if ($tax eq '?' or $tax eq '') {
+            $tag->{'Opening'} = epdcode('Opening',\@epd)
+        }
+    }
+    else {
+        $tag->{'Opening'} = epdcode('Opening',\@epd) if $parms->if_Opening();
+    }
+}
+
+sub domTEXTGametext {
+    my $parms = shift;
+    my $move = shift;
+    my $Gametext = shift;
+    my $movetext = '';
+
+    foreach my $element (@{$Gametext}) {
+        if ($element->{'Movenumber'} % 2) {
+            $movetext .= "$move. ";
+        }
+        else {
+            $move++;            	
+        }
+        $movetext .= $element->{'Movetext'} . " ";
+        if ($element->{'Comment'}) {
+            $movetext =~ s/\s$//;
+            $movetext .= '(' . $element->{'Comment'} . ')' if $parms->if_comments();
+        }
+        if ($element->{'Nag'}) {
+            my $s = $element->{'Nag'};
+
+            if ($s) {
+                if ($s < 6) {
+                    $movetext =~ s/\s$//;
+                    $movetext .= NAG($s);
+                }
+                else {
+                    $movetext =~ s/\s$//;
+                    $movetext .= "\$$s" if $parms->if_nags();
+                }
+            }                
+        }
+        if ($element->{'Rav'}) {
+                my $ravtext = domTEXTGametext($parms,$move,$element->{'Rav'});
+
+                $ravtext =~ s/\s$//;
+                $movetext =~ s/\s$//;
+                $movetext .= "{$ravtext}";
+        }
+    }
+    return $movetext;
+}
+
+sub domEPD {
+    my $Gametext = shift;
+    my @epd;
+
+    foreach my $element (@{$Gametext}) {
+        push(@epd,$element->{'Epd'});
+    }
+    return @epd;
 }
 
 sub paragraph {
@@ -211,86 +326,206 @@ sub paragraph {
     return split(/\|/,$s);
 }
 
+sub deLIMIT {
+    my $t = shift;
+    my $startdelim = shift;
+    my $enddelim = shift;
+    my $escape = shift;
+    my $mc = new Text::DelimMatch($startdelim,$enddelim,$escape);
+    my ($prefix,$match,$remainder) = $mc->match(' ' . $t . ' ');
+
+    if ($match) {
+        return ($prefix or '') . ($remainder or ''),$mc->strip_delim($match);
+    }
+    else {
+        return $t,'';
+    }
+}
+
+sub parseComments {
+    my $rcomments = shift;
+    my $rravs = shift;
+    my $rnags = shift;
+
+    foreach  (keys %$rcomments) {
+        my $t = $rcomments->{$_};
+        my $NAG;
+        my $RAV;
+        my $COMMENT;
+        
+        ($t,$COMMENT) = deLIMIT($t,'\{','\}');
+        ($t,$RAV) = deLIMIT($t,'\(','\)','{}');
+        ($t,$NAG) = deLIMIT($t,'\$','\D');
+        if ($RAV) {
+            $rravs->{$_} = $RAV;
+        }
+        if ($NAG and $NAG ne '') {
+            $rnags->{$_} = $NAG;
+        }
+        if ($COMMENT) {
+            $rcomments->{$_} = $COMMENT;
+        }
+        else {
+            delete($rcomments->{$_});
+        }
+   }
+}
+
 sub filterXML {
-    my %parameters = @_;
-    my $file = $parameters{'source'} or die "Missing source parameter: $!\n";
-    my ($fen,$position,$type,$border,$corner,$legend,$size,$font) = ('no','yes','marroquin','single','square','no','5','Chess Kingdom');
-    $fen = lc($parameters{'fen'}) if exists($parameters{'fen'});
-    $position = lc($parameters{'position'}) if exists($parameters{'position'});
-    $font = $parameters{'font'} if exists($parameters{'font'});
-    $border = lc($parameters{'border'}) if exists($parameters{'border'});
-    $corner = lc($parameters{'corner'}) if exists($parameters{'corner'});
-    $legend = lc($parameters{'legend'}) if exists($parameters{'legend'});
-    $size = lc($parameters{'size'}) if exists($parameters{'size'});
-    $type = $font2map{$font};
-
-    my $pgn = new Chess::PGN::Parse($file) or die "Can't open $file: $!\n";
-    my $games_ref = $pgn->read_all({save_comments => 'yes'});
-    my $arrayref;
-    my @moves;
-    my %comments;
-    my %tags;
-    my %ravs;
-    my %nags;
-    my @epd;
-    my @rows;
-    my $result;
-    my $date;
-    my @date;
-
+    my $parms = new Parms(@_);
+    my $file = $parms->get_source();
+    my @DOM;
+    my $filetext;
+    
+    {
+        $/ = undef;
+        open(FILE,$file) or die "Couldn't open file:$file $!\n";
+        $filetext = <FILE>;
+        close(FILE);
+    }
+    @DOM = getDOM($filetext);
     $file =~ s/.pgn//;
     $file = uc($file);
-
+#-----------------------------------------------------------------------------
     print <<"HEADER";
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="pgn.xsl"?>
 <!DOCTYPE CHESSGAMES SYSTEM "pgn.dtd">
 <CHESSGAMES NAME="$file Games">
 HEADER
-    foreach  (@{$games_ref}) {
-        my $move = 1;
-        my $n = 1;
-        my $white;
-        my $ckey;
-        my @movesmade;
-        $arrayref = $_;
-        @moves = ();
-        %comments = ();
-        %tags = ();
-        %nags = ();
-        %ravs = ();
+#-----------------------------------------------------------------------------
+    dom2XML($parms,@DOM);
+    print "</CHESSGAMES>\n";
+}
 
-        print "\t\t<GAME>\n";
-        foreach my $key  (keys %{$arrayref}) {
-            my $ref = %{$arrayref}->{$key};
+sub dom2XML {
+    my $parms = shift;
+    my @DOM = @_;
+    my $level = 0;
+    my $result;
+
+    foreach (@DOM) {
+        print "\t<GAME>\n";
+        print "\t\t<TAGLIST>\n";
+        foreach  my $key ('Event','Site','Date','Round','White','Black','Result') {
+            if ($_->{'Tags'}->{$key}) {
+                if ($key eq 'Result') {
+                    $result = $_->{'Tags'}->{$key};
+
+                    if ($result eq '1-0') {
+                        $result = 'WHITEWIN';
+                    }
+                    elsif ($result eq '0-1') {
+                        $result = 'BLACKWIN';
+                    }
+                    elsif ($result eq '1/2-1/2') {
+                        $result = 'DRAW';
+                    }
+                    else {
+                    	$result = 'UNKNOWN';
+                    }
+                    print "\t\t\t<Result GAMERESULT=\"$result\"/>\n";
+                }
+                elsif ($key eq 'Date') {
+                    my @date = split(/\./,$_->{'Tags'}->{$key});
+
+                    print "\t\t\t<Date YEAR=\"$date[0]\" MONTH=\"$date[1]\" DAY=\"$date[2]\"/>\n";
+                }
+                else {
+                    print "\t\t\t<$key>$_->{'Tags'}->{$key}</$key>\n";
+                }
+                delete($_->{'Tags'}->{$key});
+            }
+        }
+        foreach my $key (sort keys %{$_->{'Tags'}}) {
+            print "\t\t\t<$key>$_->{Tags}->{$key}</$key>\n";
+        }
+        print "\t\t</TAGLIST>\n";
+        dom2XMLGametext($parms,$level,$result,$_->{'Gametext'});
+        print "\t</GAME>\n";
+    }
+}
+
+sub dom2XMLGametext {
+    my $parms = shift;
+    my $level = shift;
+    my $result = shift;
+    my $Gametext = shift;
+    my $tabs = "\t" x 2 . "\t" x $level;
+    my $diagram = sub {
+        my $element = shift;
+        my @rows = epdstr(
+            epd => $element,
+            type => $parms->get_type(),
+            border => $parms->get_border(),
+            corner => $parms->get_corner(),
+            legend => $parms->get_legend()
+            );
+
+        print "$tabs\t<POSITION FONT=\"",$parms->get_font(),"\" SIZE=\"",$parms->get_size() - 2,"\">\n";
+        foreach my $row (@rows) {
+            print "$tabs\t\t<ROW>$row</ROW>\n";
+        }
+        print "$tabs\t</POSITION>\n";
+    };
+
+    print "$tabs<GAMETEXT LEVEL=\"$level\">\n";
+    foreach my $element (@{$Gametext}) {
+        print "$tabs\t<MOVENUMBER>$element->{'Movenumber'}</MOVENUMBER>\n";
+        print "$tabs\t<MOVE>$element->{'Movetext'}</MOVE>\n";
+        if ($element->{'Rav'}) {
+            dom2XMLGametext($parms,$level + 1,$result,$element->{'Rav'});
+        }
+        print "$tabs\t<COMMENT>$element->{'Comment'}</COMMENT>\n" if $element->{'Comment'};
+        if ($element->{'Nag'}) {
+            my $s = $element->{'Nag'};
+            if ($s eq '0' and ($parms->if_position() or $parms->get_position() eq 'nag')) {
+                &$diagram($element->{'Epd'});
+            }
+            else {
+            	print "$tabs\t<NAG>$element->{'Nag'}</NAG>\n";
+            }
+        }
+        print "$tabs\t<FENstr>$element->{'Epd'}</FENstr>\n" if $parms->if_fen();
+    }
+    print "$tabs\t<GAMETERMINATION GAMERESULT=\"$result\"/>\n";
+    print "$tabs</GAMETEXT>\n";
+    if ($level == 0 and ($parms->if_position() or $parms->get_position() eq 'end')) {
+        chop($tabs);
+        &$diagram(@{$Gametext}[-1]->{'Epd'});
+    }
+}
+
+sub getDOM {
+    my $s = shift;
+    my $pgn = new Chess::PGN::Parse undef, $s;
+    my $games_ref = $pgn->read_all({save_comments => 'yes'});
+    my @DOM;
+
+    foreach  (@{$games_ref}) {
+        my %comments;
+        my %ravs;
+        my %nags;
+        my @moves;
+        my @epd;
+        my %tags;
+        my %game;
+        my @movelist;
+        my @movesmade;
+        my $position = 0;
+        my $movenumber = 1;
+
+        push(@DOM,\%game);
+        foreach my $key  (keys %{$_}) {
+            my $ref = $_->{$key};
             if (ref($ref)) {
                 if ($key eq 'GameMoves') {
                     @moves = @{$ref};
+                    @epd = epdlist(@moves);
                 }
                 elsif ($key eq 'GameComments') {
                     %comments = %{$ref};
-                    foreach  (keys %comments) {
-                        my $t = $comments{$_};
-                        my $NAG;
-                        my $RAV;
-                        my $COMMENT;
-
-                        ($t,$RAV) = deLIMIT($t,'\(','\)');
-                        ($t,$COMMENT) = deLIMIT($t,'\{','\}');
-                        ($t,$NAG) = deLIMIT($t,'\$','\D');
-                        if ($RAV) {
-                            $ravs{$_} = $RAV;
-                        }
-                        if ($NAG ne '') {
-                            $nags{$_} = $NAG;
-                        }
-                        if ($COMMENT) {
-                            $comments{$_} = $COMMENT;
-                        }
-                        else {
-                        	delete($comments{$_});
-                        }
-                   }
+                    parseComments(\%comments,\%ravs,\%nags);
                 }
             }
             elsif ($ref) {
@@ -299,114 +534,38 @@ HEADER
                 }
             }
         }
-        @epd = epdlist( @moves );
-        @rows = epdstr(epd => $epd[-1],type => $type,border => $border,corner => $corner,legend => $legend);
-        print "\t\t<TAGLIST>\n";
-        foreach  ('Event','Site','Date','Round','White','Black','Result') {
-            if ($_ eq 'Result') {
-                $result = $tags{'Result'};
-
-                print "\t\t\t<Result GAMERESULT=";
-                if ($result eq '1-0') {
-                    $result = 'WHITEWIN';
-                }
-                elsif ($result eq '0-1') {
-                    $result = 'BLACKWIN';
-                }
-                elsif ($result eq '1/2-1/2') {
-                    $result = 'DRAW';
-                }
-                else {
-                    $result = 'UNKNOWN';
-                }
-                print "\"$result\"/>\n";
-            }
-            elsif ($_ eq 'Date') {
-                $date = $tags{'Date'};
-                @date = split(/\./,$date);
-
-                print "\t\t\t<Date YEAR=\"$date[0]\" MONTH=\"$date[1]\" DAY=\"$date[2]\"/>\n";
-            }
-            else {
-                print "\t\t\t<$_>$tags{$_}</$_>\n";
-            }
-            delete($tags{$_});
-        }
-        foreach  (sort keys %tags) {
-            print "\t\t\t<$_>$tags{$_}</$_>\n";
-        }
-        print "\t\t</TAGLIST>\n";
-        print "\t\t<GAMETEXT>\n";
+        $game{'Tags'} = \%tags;
+        $game{'Gametext'} = \@movelist;
         foreach  (@moves) {
+            my %move;
+            my $ckey;
+
+            $move{'Movetext'} = $_;
+            $move{'Movenumber'} = $position;
             push(@movesmade,$_);
-            if ($n % 2) {
-                print "\t\t\t<MOVENUMBER>$move</MOVENUMBER>\n";
-                $ckey = "${move}w";
+            if ($position % 2) {
+                $ckey = "${movenumber}b";
+                $movenumber++;
             }
             else {
-                $ckey = "${move}b";
-                $move++;
+                $ckey = "${movenumber}w";
             }
-            print "\t\t\t<MOVE>$_</MOVE>\n";
-            if (%comments and exists($comments{$ckey})) {
-                my $s = $comments{$ckey};
-                print "\t\t\t<COMMENT>$s</COMMENT>\n";
-            }
-            if (%nags and exists($nags{$ckey})) {
-                my $s = $nags{$ckey};
-                if ($s eq '0' and ($position eq 'yes' or $position eq 'nag')) {
-                    my @epd = epdlist( @movesmade );
-                    my @rows = epdstr(epd => $epd[-1],type => $type,border => $border,corner => $corner,legend => $legend);
-                    print "\t\t\t<POSITION FONT=\"$font\" SIZE=\"",$size - 2,"\">\n";
-                    foreach  (@rows) {
-                        print "\t\t\t\t<ROW>$_</ROW>\n";
-                    }
-                    print "\t\t\t</POSITION>\n";
-                }
-                else {
-                    print "\t\t\t<NAG>$s</NAG>\n";
-                }
-            }
+            $move{'Comment'} = $comments{$ckey} if (%comments and exists($comments{$ckey}));
+            $move{'Nag'} = $nags{$ckey} if (%nags and exists($nags{$ckey}));
             if (%ravs and exists($ravs{$ckey})) {
-                my $s = $ravs{$ckey};
-                #
-                # Note that I don't do anything with RAVS at the moment...
-                #
-            }
-            if ($fen eq 'yes') {
-                print "\t\t\t<FENstr>$epd[$move]</FENstr>\n";
-            }
-            $n++;
-        }
-        print "\t\t\t<GAMETERMINATION GAMERESULT=\"$result\"/>\n";;
-        print "\t\t</GAMETEXT>\n";
-        if ($position eq 'yes' or $position eq 'end') {
-            print "\t\t<POSITION FONT=\"$font\" SIZE=\"$size\">\n";
-            foreach  (@rows) {
-                print "\t\t\t<ROW>$_</ROW>\n";
-            }
-            print "\t\t</POSITION>\n";
-        }
-        print "\t</GAME>\n";
-    }
-    print "</CHESSGAMES>\n";
-}
+                my $n = scalar(@movesmade) - 2;
+                my @ravDOM = getDOM("[Result \"*\"]\n\n" . join(' ',@movesmade[0..$n++]) . " $ravs{$ckey}");
 
-sub deLIMIT {
-    my $t = shift;
-    my $startdelim = shift;
-    my $enddelim = shift;
-    my $mc = new Text::DelimMatch($startdelim,$enddelim);
-    my ($prefix,$match,$remainder) = $mc->match(' ' . $t . ' ');
-
-    if ($match) {
-        $match =~ s/^$startdelim//;
-        $match =~ s/$enddelim$//;
-        return ($prefix or '') . ($remainder or ''),$match;
+                delete($ravDOM[0]->{'Tags'});
+                splice(@{$ravDOM[0]->{'Gametext'}},0,$n);
+                $move{'Rav'} = $ravDOM[0]->{'Gametext'};
+            }
+            $move{'Epd'} = $epd[$position++];
+            $move{'Movenumber'} = $position;
+            push(@movelist,\%move);
+        }
     }
-    else {
-        return $t,'';
-    }
+    return @DOM;
 }
 
 1;
@@ -441,11 +600,33 @@ B<OR>
          hsmyers => 'Myers, Hugh S (ID)'
      );
  
+     my @exclude = qw(
+         WhiteElo
+         BlackElo
+         EventDate
+     );
+ 
      filter(
          source => $ARGV[0],
          filtertype => 'TEXT',
-         substitute => \%substitutions,
+         substitutions => \%substitutions,
          nags => 'yes',
+         exclude => \@exclude,
+     );
+  }
+
+B<OR>
+
+ #!/usr/bin/perl
+ # 
+ use strict;
+ use warnings;
+ use Chess::PGN::Filter;
+ 
+ if ($ARGV[0]) {
+     filter(
+         source => $ARGV[0],
+         filtertype => 'DOM',
      );
  }
 
@@ -469,9 +650,132 @@ This includes things like game text all on a single line without a preceding bla
 indicated with zeros rather than the letter 'O'. There is at least one application that carefully indents
 the first move! The list of oddities is probably as long as the list of applications.
 
+=item 1DOM -- A Document Object Model (DOM) makes for a very convenient interim form, common to all
+other filter types. Useful in both the design and debugging phases of filter construction. By way of
+self-documentation, here is an example of a single game that shows all of the obvious features of
+the DOM:
+
+ $VAR1 = {
+          'Tags' => {
+                      'Site' => 'Boise (ID)',
+                      'Event' => 'Cabin Fever Open',
+                      'Round' => '1',
+                      'ECO' => '?',
+                      'Date' => '1997.??.??',
+                      'White' => 'Barrett Curtis',
+                      'Black' => 'Myers Hugh S',
+                      'Result' => '1-0'
+                    },
+          'Gametext' => [
+                          {
+                            'Movenumber' => '1',
+                            'Epd' => 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3',
+                            'Movetext' => 'e4'
+                          },
+                          {
+                            'Movenumber' => '2',
+                            'Epd' => 'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6',
+                            'Movetext' => 'd5'
+                          },
+                          {
+                            'Movenumber' => '3',
+                            'Epd' => 'rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR b KQkq -',
+                            'Movetext' => 'e5'
+                          },
+                          {
+                            'Movenumber' => '4',
+                            'Comment' => 'Playing ...Bf5 before closing the c8-h3 diagonal has  some positive features.',
+                            'Epd' => 'rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq -',
+                            'Movetext' => 'e6'
+                          },
+                          {
+                            'Movenumber' => '5',
+                            'Epd' => 'rnbqkbnr/ppp2ppp/4p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq d3',
+                            'Movetext' => 'd4'
+                          },
+                          {
+                            'Movenumber' => '6',
+                            'Comment' => 'Time to think like a Frenchie - c7-c5!',
+                            'Epd' => 'r1bqkbnr/ppp2ppp/2n1p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR w KQkq -',
+                            'Movetext' => 'Nc6',
+                            'Rav' => [
+                                       {
+                                         'Movenumber' => '6',
+                                         'Epd' => 'rnbqkbnr/pp3ppp/4p3/2ppP3/3P4/8/PPP2PPP/RNBQKBNR w KQkq c6',
+                                         'Movetext' => 'c5'
+                                       }
+                                     ]
+                          },
+ .
+ .
+ .
+                          {
+                            'Movenumber' => '29',
+                            'Comment' => ' (Bxe5) Black could  still kick for a while if he had played ...Bxe5.',
+                            'Epd' => 'r1bq1rk1/2p1npb1/2n1p2P/pp1pP1p1/3P2P1/2P4Q/PP2BP2/RNB1K2R b KQ -',
+                            'Movetext' => 'h6'
+                          }
+                        ]
+        };
+
+Briefly, the DOM is a multiply nested data structure of hashes and arrays. In a sort of outline form,
+it more or less follows this schematic:
+
+=over
+
+=item I PGN Document Root
+
+=over
+
+=item A. Extra-Game Comments
+
+=over
+
+=item 1. Before 1st Game
+
+=item 2. After Each Game
+
 =back
 
-Owing to a dearth of imagination, there is but one routine in the module:
+=item  B. Games
+
+=over
+
+=item 1. Tagset
+
+=item 2. Extra-Gametext Comments
+
+=item 3. Gametext
+
+=over
+
+=item a. Moves
+
+=over 
+
+=item 1.) Movetext
+
+=item 2.) Comment
+
+=item 3.) NAG
+
+=item 4.) RAV (essentially an instance of Gametext)
+
+=back
+
+=back
+
+=back
+
+=back
+
+=back
+
+The 'extra' comments have not yet been implemented. See the TODO list.
+
+=back
+
+Owing to a dearth of imagination, there is but one exported routine in the module:
 
 =head2 filter(I<parameter_hash>)
 
@@ -493,6 +797,8 @@ There are however, a small host of known keys for C<parameter_hash> and they are
 other modifications possible. Global correction of tag values, error checking for game text termination etc. Blank
 lines and paragraph wrapping emplemented to match PGN standard.
 
+=item 1DOM -- converts from .pgn text to a Document Object Model as expressed using Data::Dumper.
+
 =back
 
 =item * source -- name of file to convert, with output sent to STDOUT.
@@ -504,6 +810,7 @@ lines and paragraph wrapping emplemented to match PGN standard.
 =over
 
 =item * substitute -- simple text substitution mechanism applied globally (file scope) to all tag text.
+
 
 This is actually a hash reference where the hash reffered to has the form of (text_to_change => text_to_change_to). For instance:
 
@@ -524,6 +831,28 @@ as used in the B<SYNOPSIS> example would expand my user name into a full version
 =item * NIC -- switch to include/exclude NIC tag (defaults to 'no'.)
 
 =item * Opening -- switch to include/exclude Opening tag (defaults to 'yes'.)
+
+=item * exclude -- an array reference of tags to be excluded (defaults to undef.)
+
+
+This is an array reference where the referent has the form of (tag_to_exclude_1..tag_to_exclude_n), i.e.:
+
+ my @exclude = qw(
+     WhiteElo
+     BlackElo
+     EventDate
+ );
+
+again, as used in the B<SYNOPSIS> example, this would eliminate the 'WhiteElo', 'BlackElo' and
+'EventDate' tags from the .pgn file being processed.
+
+=item * sticky -- switch to turn on/off 'sticky' nature of the data in the 'Event', 'Site' and
+'Date' tags (defaults to 'yes'.) Essentially this allows a tag to remember and use the previous
+games tag if the tag contents for current game is either '?' or empty.
+
+=item * autoround -- switch to turn on/off autoincrement for the 'Round' tag (default is 'yes'.)
+Similar to 'sticky', if a 'Round' tag is either empty or set to '?' then the current tag is
+set to the value of the previous tag plus one.
 
 =back
 
@@ -643,6 +972,10 @@ errors will be generated by unsupported options, you get the best a font can do,
 
 =item use Text::DelimMatch;
 
+=item use Carp;
+
+=item use Data::Dumper;
+
 =back
 
 =head1 TODO
@@ -651,7 +984,9 @@ errors will be generated by unsupported options, you get the best a font can do,
 
 =item * Add other output types, PDF, DHTML, LaTeX.
 
-=item * Handle recursive annotation variations...what you call RAVs!
+=item * Add regular expressions to substitution mechanism.
+
+=item * Allow for 'extra' and 'inter' semicolon comments.
 
 =back
 

@@ -1,4 +1,4 @@
-<!-- edited with XML Spy v4.1 U (http://www.xmlspy.com) by Hugh S. Myers (private) -->
+<!-- edited with XML Spy v4.3 U (http://www.xmlspy.com) by Hugh S. Myers (private) -->
 <!ELEMENT CHESSGAMES (GAME*)>
 <!ATTLIST CHESSGAMES
 	NAME CDATA #IMPLIED
@@ -51,7 +51,10 @@
 <!ELEMENT WhiteTitle (#PCDATA)>
 <!ELEMENT WhiteType (#PCDATA)>
 <!ELEMENT WhiteUSCF (#PCDATA)>
-<!ELEMENT GAMETEXT ((MOVENUMBER, (MOVE, (GAMETEXT*, COMMENT*, POSITION*, NAG*,FENstr*)*)*)+, GAMETERMINATION?)>
+<!ELEMENT GAMETEXT ((MOVENUMBER, (MOVE, (GAMETEXT*, COMMENT*, POSITION*, NAG*, FENstr*)*)*)+, GAMETERMINATION?)>
+<!ATTLIST GAMETEXT
+	LEVEL CDATA #IMPLIED
+>
 <!ELEMENT MOVENUMBER (#PCDATA)>
 <!ELEMENT MOVE (#PCDATA)>
 <!ELEMENT COMMENT (#PCDATA)>

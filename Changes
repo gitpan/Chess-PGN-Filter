@@ -15,3 +15,15 @@ Revision history for Perl extension Chess::PGN::Filter.
 	- add 'fen' to XML
 	- rename 'type' to 'font' for TEXT, font map will come from table lookup
 	- ready POD for publishing
+0.05  Thu Mar 28 15:21:49 2002
+        - re-organize code around a document object model (DOM)
+	- add Parms object to simplify parameter initialization and subroutine usage
+	- add DOM output as a debugging aid
+	- re-work XML filter
+	- re-work TEXT filter
+	- add RAV expansion to XML filter
+	- add RAV expansion to TEXT filter
+	- add notion of 'sticky' contents to Event, Site and Date tags
+	- add notion of 'autoincrement' to Round tag
+	- add tag exception list
+	- continue POD editing

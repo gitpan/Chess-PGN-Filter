@@ -1,9 +1,10 @@
-Chess/PGN/Filter version 0.04
+Chess/PGN/Filter version 0.05
 =============================
 
 This is a simple text filter, i.e. text in one side, reformatted text out the other side. This
 release supports PGN to XML using an available DTD. It also supports a TEXT filter type that
-attempts to normalize possibly non-standard PGN input.
+attempts to normalize possibly non-standard PGN input. There is now a DOM output type that is
+used primarily for debugging other filter types during development.
 
 INSTALLATION
 
