@@ -27,3 +27,7 @@ Revision history for Perl extension Chess::PGN::Filter.
 	- add notion of 'autoincrement' to Round tag
 	- add tag exception list
 	- continue POD editing
+0.06  Fri Mar 29 10:20:57 2002
+        - edit Makefile.PL to reflect dependance on Chess::PGN::EPD 0.08
+	- added name and email to Makefile.PL
+
