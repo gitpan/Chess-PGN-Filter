@@ -66,7 +66,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw(
     &filter
 );
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 
 sub filter {
@@ -794,7 +794,7 @@ There are however, a small host of known keys for C<parameter_hash> and they are
 =over
 
 =item * verbose -- switch between output to STDOUT and output returned as an ARRAY refference. Defaults to 1 and sends
-output to STDOUT. The code for this patch comes from Gene Boggs [gb@ology.net] for which my thanks!
+output to STDOUT. The code for this patch comes from Gene Boggs [gene@cpan.org] for which my thanks!
 
 =item * filtertype -- essentially which filter to use. Values implemented are:
 

@@ -55,3 +55,6 @@ Revision history for Perl extension Chess::PGN::Filter.
 	- Add new test for verbose mode to test.pl
 	- Fix really stupid design error in filter sub. Now uses Parms method as called
 	  for in original concept.
+0.13  Mon May 24 16:25:00 2004
+	- Synchronize version number across Filter.pm, readme and Changes.
+	- Change Gene's email to [gene@cpan.org].
