@@ -1,0 +1,17 @@
+Revision history for Perl extension Chess::PGN::Filter.
+
+0.01  Fri Feb 22 17:41:42 2002
+	- original version; created by h2xs 1.21 with options
+		-A -X -n Chess::PGN::Filter
+0.02  Fri Mar 15 22:48:27 2002
+        - slight revision to pgn.xsl, code simplification
+0.03  Tue Mar 19 10:51:55 2002
+	- document corrections
+	- add TEXT filtertype
+	- normalize tag names for XML filtertype, with changes to .dtd and .xsl files
+0.04  Wed Mar 20 07:55:32 2002
+        - fix problem with 'substitute', shouldn't crash if none supplied
+	- add 'position' to XML
+	- add 'fen' to XML
+	- rename 'type' to 'font' for TEXT, font map will come from table lookup
+	- ready POD for publishing
