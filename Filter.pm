@@ -9,11 +9,12 @@ use Carp;
 sub new {
     my ($class,%arg) = @_;
     bless {
+        _verbose => defined $arg{verbose} ? $arg{verbose} : 1, #default legacy verbose
         _filtertype => $arg{filtertype},
         _source => $arg{source},
         _fen => $arg{fen} || 'no',
         _position => $arg{position} || 'yes',
-        _type => $arg{type} || ($arg{font} ? $font2map{$arg{font}} : 'marroquin'),
+        _type => $arg{type} || ($arg{font} || 'marroquin'),
         _border => $arg{single} || 'single',
         _corner => $arg{square} || 'square',
         _legend => $arg{legend} || 'no',
@@ -63,24 +64,31 @@ require Exporter;
 our @ISA = qw(Exporter);
 
 our @EXPORT = qw(
-    &filter	
+    &filter
 );
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 
 sub filter {
-    my %parameters = @_;
-    if ($parameters{'filtertype'} eq 'XML') {
-        filterXML(@_);
+    my $parameters = new Parms(@_);
+    my $filtered;
+    if ($parameters->get_filtertype() eq 'XML') {
+        $filtered = filterXML(@_);
     }
-    elsif ($parameters{'filtertype'} eq 'TEXT') {
-        filterTEXT(@_);
+    elsif ($parameters->get_filtertype() eq 'TEXT') {
+        $filtered = filterTEXT(@_);
     }
-    elsif ($parameters{'filtertype'} eq 'DOM') {
-        filterDOM(@_);
+    elsif ($parameters->get_filtertype() eq 'DOM') {
+        $filtered = [ filterDOM(@_) ];
     }
     else {
-    	die "Unknown filtertype: '$parameters{'filtertype'}' not supported.\n";
+        die "Unknown filtertype: '$parameters->get_filtertype()' not supported.\n";
+    }
+    if ($parameters->get_verbose()) {
+        print $parameters->get_filtertype() eq 'DOM' ? Dumper(@$filtered) : $filtered;
+    }
+    else {
+        return $filtered;
     }
 }
 
@@ -95,7 +103,7 @@ sub filterDOM {
         $filetext = <FILE>;
         close(FILE);
     }
-    print Dumper(getDOM($filetext)),"\n";
+    return getDOM($filetext);
 }
 
 sub filterTEXT {
@@ -103,7 +111,8 @@ sub filterTEXT {
     my $file = $parms->get_source();
     my @DOM;
     my $filetext;
-    
+    my $text = '';
+
     {
         local $/ = undef;
         open(FILE,$file) or die "Couldn't open file:$file $!\n";
@@ -129,17 +138,18 @@ sub filterTEXT {
                         }
                     }
                 }
-                print "[$key \"$_->{'Tags'}->{$key}\"]\n";
+                $text .= "[$key \"$_->{'Tags'}->{$key}\"]\n";
                 delete($_->{'Tags'}->{$key});
             }
         }
         foreach my $key (sort keys %{$_->{'Tags'}}) {
-            print "[$key \"$_->{'Tags'}->{$key}\"]\n";
+            $text .= "[$key \"$_->{'Tags'}->{$key}\"]\n";
         }
-        print "\n";
+        $text .= "\n";
         $movetext = domTEXTGametext($parms,$move,$_->{'Gametext'});
-        print join("\n",paragraph($movetext . $termination,78)),"\n\n";
+        $text .= join("\n",paragraph($movetext . $termination,78))."\n\n";
     }
+    return $text;
 }
 
 sub doTax {
@@ -326,22 +336,6 @@ sub paragraph {
     return split(/\|/,$s);
 }
 
-#sub deLIMIT {
-#    my $t = shift;
-#    my $startdelim = shift;
-#    my $enddelim = shift;
-#    my $escape = shift;
-#    my $mc = new Text::DelimMatch($startdelim,$enddelim,$escape);
-#    my ($prefix,$match,$remainder) = $mc->match(' ' . $t . ' ');
-#
-#    if ($match) {
-#        return ($prefix or '') . ($remainder or ''),$mc->strip_delim($match);
-#    }
-#    else {
-#        return $t,'';
-#    }
-#}
-
 sub deLIMIT {
     my $t = shift;
     my $startdelim = shift;
@@ -394,7 +388,8 @@ sub filterXML {
     my $file = $parms->get_source();
     my @DOM;
     my $filetext;
-    
+    my $text = '';
+
     {
         local $/ = undef;
         open(FILE,$file) or die "Couldn't open file:$file $!\n";
@@ -405,15 +400,16 @@ sub filterXML {
     $file =~ s/.pgn//;
     $file = uc($file);
 #-----------------------------------------------------------------------------
-    print <<"HEADER";
+    $text .= <<"HEADER";
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="pgn.xsl"?>
 <!DOCTYPE CHESSGAMES SYSTEM "pgn.dtd">
 <CHESSGAMES NAME="$file Games">
 HEADER
 #-----------------------------------------------------------------------------
-    dom2XML($parms,@DOM);
-    print "</CHESSGAMES>\n";
+    $text .= dom2XML($parms,@DOM);
+    $text .= "</CHESSGAMES>\n";
+    return $text;
 }
 
 sub dom2XML {
@@ -421,10 +417,11 @@ sub dom2XML {
     my @DOM = @_;
     my $level = 0;
     my $result;
+    my $text = '';
 
     foreach (@DOM) {
-        print "\t<GAME>\n";
-        print "\t\t<TAGLIST>\n";
+        $text .= "\t<GAME>\n";
+        $text .= "\t\t<TAGLIST>\n";
         foreach  my $key ('Event','Site','Date','Round','White','Black','Result') {
             if ($_->{'Tags'}->{$key}) {
                 if ($key eq 'Result') {
@@ -442,26 +439,27 @@ sub dom2XML {
                     else {
                     	$result = 'UNKNOWN';
                     }
-                    print "\t\t\t<Result GAMERESULT=\"$result\"/>\n";
+                    $text .= "\t\t\t<Result GAMERESULT=\"$result\"/>\n";
                 }
                 elsif ($key eq 'Date') {
                     my @date = split(/\./,$_->{'Tags'}->{$key});
 
-                    print "\t\t\t<Date YEAR=\"$date[0]\" MONTH=\"$date[1]\" DAY=\"$date[2]\"/>\n";
+                    $text .= "\t\t\t<Date YEAR=\"$date[0]\" MONTH=\"$date[1]\" DAY=\"$date[2]\"/>\n";
                 }
                 else {
-                    print "\t\t\t<$key>$_->{'Tags'}->{$key}</$key>\n";
+                    $text .= "\t\t\t<$key>$_->{'Tags'}->{$key}</$key>\n";
                 }
                 delete($_->{'Tags'}->{$key});
             }
         }
         foreach my $key (sort keys %{$_->{'Tags'}}) {
-            print "\t\t\t<$key>$_->{Tags}->{$key}</$key>\n";
+            $text .= "\t\t\t<$key>$_->{Tags}->{$key}</$key>\n";
         }
-        print "\t\t</TAGLIST>\n";
-        dom2XMLGametext($parms,$level,$result,$_->{'Gametext'});
-        print "\t</GAME>\n";
+        $text .= "\t\t</TAGLIST>\n";
+        $text .= dom2XMLGametext($parms,$level,$result,$_->{'Gametext'});
+        $text .= "\t</GAME>\n";
     }
+    return $text;
 }
 
 sub dom2XMLGametext {
@@ -470,6 +468,7 @@ sub dom2XMLGametext {
     my $result = shift;
     my $Gametext = shift;
     my $tabs = "\t" x 2 . "\t" x $level;
+    my $text = '';
     my $diagram = sub {
         my $element = shift;
         my @rows = epdstr(
@@ -479,39 +478,42 @@ sub dom2XMLGametext {
             corner => $parms->get_corner(),
             legend => $parms->get_legend()
             );
+        my $text = '';
 
-        print "$tabs\t<POSITION FONT=\"",$parms->get_font(),"\" SIZE=\"",$parms->get_size() - 2,"\">\n";
+        $text .= qq|$tabs\t<POSITION FONT="|.$parms->get_font().'" SIZE="'.($parms->get_size() - 2).qq|">\n|;
         foreach my $row (@rows) {
-            print "$tabs\t\t<ROW>$row</ROW>\n";
+            $text .= "$tabs\t\t<ROW>$row</ROW>\n";
         }
-        print "$tabs\t</POSITION>\n";
+        $text .= "$tabs\t</POSITION>\n";
+        return $text;
     };
 
-    print "$tabs<GAMETEXT LEVEL=\"$level\">\n";
+    $text .= qq|$tabs<GAMETEXT LEVEL="$level">\n|;
     foreach my $element (@{$Gametext}) {
-        print "$tabs\t<MOVENUMBER>$element->{'Movenumber'}</MOVENUMBER>\n";
-        print "$tabs\t<MOVE>$element->{'Movetext'}</MOVE>\n";
+        $text .= "$tabs\t<MOVENUMBER>$element->{'Movenumber'}</MOVENUMBER>\n";
+        $text .= "$tabs\t<MOVE>$element->{'Movetext'}</MOVE>\n";
         if ($element->{'Rav'}) {
-            dom2XMLGametext($parms,$level + 1,'UNKNOWN',$element->{'Rav'});
+            $text .= dom2XMLGametext($parms,$level + 1,'UNKNOWN',$element->{'Rav'});
         }
-        print "$tabs\t<COMMENT>$element->{'Comment'}</COMMENT>\n" if $element->{'Comment'};
+        $text .= "$tabs\t<COMMENT>$element->{'Comment'}</COMMENT>\n" if $element->{'Comment'};
         if ($element->{'Nag'}) {
             my $s = $element->{'Nag'};
             if ($s eq '0' and ($parms->if_position() or $parms->get_position() eq 'nag')) {
-                &$diagram($element->{'Epd'});
+                $text .= &$diagram($element->{'Epd'});
             }
             else {
-            	print "$tabs\t<NAG>$element->{'Nag'}</NAG>\n";
+            	$text .= "$tabs\t<NAG>$element->{'Nag'}</NAG>\n";
             }
         }
-        print "$tabs\t<FENstr>$element->{'Epd'}</FENstr>\n" if $parms->if_fen();
+        $text .= "$tabs\t<FENstr>$element->{'Epd'}</FENstr>\n" if $parms->if_fen();
     }
-    print "$tabs\t<GAMETERMINATION GAMERESULT=\"$result\"/>\n";
-    print "$tabs</GAMETEXT>\n";
+    $text .= qq|$tabs\t<GAMETERMINATION GAMERESULT="$result"/>\n|;
+    $text .= "$tabs</GAMETEXT>\n";
     if ($level == 0 and ($parms->if_position() or $parms->get_position() eq 'end')) {
         chop($tabs);
-        &$diagram(@{$Gametext}[-1]->{'Epd'});
+        $text .= &$diagram(@{$Gametext}[-1]->{'Epd'});
     }
+    return $text;
 }
 
 sub getDOM {
@@ -595,58 +597,44 @@ Chess::PGN::Filter - Perl extension for converting PGN files to other formats.
 
 =head1 SYNOPSIS
 
- #!/usr/bin/perl
- # 
- use strict;
- use warnings;
  use Chess::PGN::Filter;
- 
- if ($ARGV[0]) {
-     filter(source => $ARGV[0],filtertype => 'XML');
- }
+
+ filter(source => $pgn,filtertype => 'XML');
 
 B<OR>
  
- #!/usr/bin/perl
- # 
- use strict;
- use warnings;
- use Chess::PGN::Filter;
- 
- if ($ARGV[0]) {
-     my %substitutions = (
-         hsmyers => 'Myers, Hugh S (ID)'
-     );
- 
-     my @exclude = qw(
-         WhiteElo
-         BlackElo
-         EventDate
-     );
- 
-     filter(
-         source => $ARGV[0],
-         filtertype => 'TEXT',
-         substitutions => \%substitutions,
-         nags => 'yes',
-         exclude => \@exclude,
-     );
-  }
+ my %substitutions = (
+     hsmyers => 'Myers, Hugh S (ID)',
+ );
+
+ my @exclude = qw(
+     WhiteElo
+     BlackElo
+     EventDate
+ );
+
+ filter(
+     source => $pgn,
+     filtertype => 'TEXT',
+     substitutions => \%substitutions,
+     nags => 'yes',
+     exclude => \@exclude,
+ );
 
 B<OR>
 
- #!/usr/bin/perl
- # 
- use strict;
- use warnings;
- use Chess::PGN::Filter;
- 
- if ($ARGV[0]) {
-     filter(
-         source => $ARGV[0],
-         filtertype => 'DOM',
-     );
- }
+ filter(
+     source => $pgn,
+     filtertype => 'DOM',
+ );
+
+B<OR>
+
+ $dom = filter(
+     source => $pgn,
+     filtertype => 'DOM',
+     verbose => 0,
+ );
 
 =head1 DESCRIPTION
 
@@ -655,20 +643,20 @@ this writing, the following supported choices:
 
 =over
 
-=item 1XML -- Converts from .pgn to .xml using the included pgn.dtd as the validation document. This
+=item 1. XML -- Converts from .pgn to .xml using the included pgn.dtd as the validation document. This
 is for the most part a one to one transliteration of the PGN standard into XMLese. It does have the
 additional virtue of allowing positions to be encoded within the XML output. These are generated by
 an embedded NAG of {0} and automatically (user controlled) at the end of each game. As a kind of adjunct
 to the position diagrams, pgn.dtd optionally allows each move to include it's FEN string. This allows
 scripted animation for web pages generated this information.
 
-=item 1TEXT -- Although the PGN standard is widely available, many program that generate .pgn do so
+=item 2. TEXT -- Although the PGN standard is widely available, many program that generate .pgn do so
 in an ill-formed way. This mode is an attempt to 'normalize' away the various flaws found in the 'wild'!
 This includes things like game text all on a single line without a preceding blank line. Or castling
 indicated with zeros rather than the letter 'O'. There is at least one application that carefully indents
 the first move! The list of oddities is probably as long as the list of applications.
 
-=item 1DOM -- A Document Object Model (DOM) makes for a very convenient interim form, common to all
+=item 3. DOM -- A Document Object Model (DOM) makes for a very convenient interim form, common to all
 other filter types. Useful in both the design and debugging phases of filter construction. By way of
 self-documentation, here is an example of a single game that shows all of the obvious features of
 the DOM:
@@ -805,17 +793,20 @@ There are however, a small host of known keys for C<parameter_hash> and they are
 
 =over
 
+=item * verbose -- switch between output to STDOUT and output returned as an ARRAY refference. Defaults to 1 and sends
+output to STDOUT. The code for this patch comes from Gene Boggs [gb@ology.net] for which my thanks!
+
 =item * filtertype -- essentially which filter to use. Values implemented are:
 
 =over
 
-=item 1XML -- converts from .pgn text in, to .xml file out. Validated by supplied pgn.dtd.
+=item 1. XML -- converts from .pgn text in, to .xml file out. Validated by supplied pgn.dtd.
 
-=item 1TEXT -- converts from .pgn text in, to .pgn out with reformatting of ill-formed text and
+=item 2. TEXT -- converts from .pgn text in, to .pgn out with reformatting of ill-formed text and
 other modifications possible. Global correction of tag values, error checking for game text termination etc. Blank
 lines and paragraph wrapping emplemented to match PGN standard.
 
-=item 1DOM -- converts from .pgn text to a Document Object Model as expressed using Data::Dumper.
+=item 3. DOM -- converts from .pgn text to a Document Object Model as expressed using Data::Dumper.
 
 =back
 
@@ -903,59 +894,59 @@ Following list shows font name, font designer. They are available from L<http://
 
 =over
 
-=item 1Chess Cases -- Matthieu Leschemelle
+=item * Chess Cases -- Matthieu Leschemelle
 
-=item 1Chess Adventurer -- Armando H. Marroquin
+=item * Chess Adventurer -- Armando H. Marroquin
 
-=item 1Chess Alfonso-X -- Armando H. Marroquin
+=item * Chess Alfonso-X -- Armando H. Marroquin
 
-=item 1Chess Alpha -- Eric Bentzen
+=item * Chess Alpha -- Eric Bentzen
 
-=item 1Chess Berlin -- Eric Bentzen
+=item * Chess Berlin -- Eric Bentzen
 
-=item 1Chess Condal -- Armando H. Marroquin
+=item * Chess Condal -- Armando H. Marroquin
 
-=item 1Chess Harlequin -- Armando H. Marroquin
+=item * Chess Harlequin -- Armando H. Marroquin
 
-=item 1Chess Kingdom -- Armando H. Marroquin
+=item * Chess Kingdom -- Armando H. Marroquin
 
-=item 1Chess Leipzig -- Armando H. Marroquin
+=item * Chess Leipzig -- Armando H. Marroquin
 
-=item 1Chess Line -- Armando H. Marroquin
+=item * Chess Line -- Armando H. Marroquin
 
-=item 1Chess Lucena -- Armando H. Marroquin
+=item * Chess Lucena -- Armando H. Marroquin
 
-=item 1Chess Magnetic -- Armando H. Marroquin
+=item * Chess Magnetic -- Armando H. Marroquin
 
-=item 1Chess Mark -- Armando H. Marroquin
+=item * Chess Mark -- Armando H. Marroquin
 
-=item 1Chess Marroquin -- Armando H. Marroquin
+=item * Chess Marroquin -- Armando H. Marroquin
 
-=item 1Chess Maya -- Armando H. Marroquin
+=item * Chess Maya -- Armando H. Marroquin
 
-=item 1Chess Mediaeval -- Armando H. Marroquin
+=item * Chess Mediaeval -- Armando H. Marroquin
 
-=item 1Chess Mérida -- Armando H. Marroquin
+=item * Chess Mérida -- Armando H. Marroquin
 
-=item 1Chess Millennia -- Armando H. Marroquin
+=item * Chess Millennia -- Armando H. Marroquin
 
-=item 1Chess Miscel -- Armando H. Marroquin
+=item * Chess Miscel -- Armando H. Marroquin
 
-=item 1Chess Montreal -- Gary Katch
+=item * Chess Montreal -- Gary Katch
 
-=item 1Chess Motif -- Armando H. Marroquin
+=item * Chess Motif -- Armando H. Marroquin
 
-=item 1Chess Plain -- Alan Hickey
+=item * Chess Plain -- Alan Hickey
 
-=item 1Chess Regular -- Alistair Scott
+=item * Chess Regular -- Alistair Scott
 
-=item 1Chess Usual -- Armando H. Marroquin
+=item * Chess Usual -- Armando H. Marroquin
 
-=item 1Chess Utrecht -- Hans Bodlaender
+=item * Chess Utrecht -- Hans Bodlaender
 
-=item 1Tilburg -- Eric Schiller and Bill Cone
+=item * Tilburg -- Eric Schiller and Bill Cone
 
-=item 1Traveller Standard v3 -- Alan Cowderoy
+=item * Traveller Standard v3 -- Alan Cowderoy
 
 =back
 

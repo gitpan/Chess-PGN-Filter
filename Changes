@@ -47,3 +47,11 @@ Revision history for Perl extension Chess::PGN::Filter.
 	- patch bug in filterXML, RAV GAMETERMINATION was wrong, should be 'UNKNOWN'
 0.11  Sun Jul 28 12:48:31 2002
 	- restore examples to distrubution
+0.12  Mon May 24 10:05:00 2004
+	- Incorporate patch from Gene Boggs [gb@ology.net] which adds verbose switch
+	  that toggles between filter result to STDOUT (default) or returned as an
+	  array reference.
+	- Fix errors in test.pl
+	- Add new test for verbose mode to test.pl
+	- Fix really stupid design error in filter sub. Now uses Parms method as called
+	  for in original concept.

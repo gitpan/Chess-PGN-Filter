@@ -6,7 +6,7 @@
 # change 'tests => 1' to 'tests => last_test_to_print';
 
 use Test;
-BEGIN { plan tests => 13 };
+BEGIN { plan tests => 14 };
 use Chess::PGN::Filter;
 ok(1); # If we made it this far, we're ok.
 
@@ -34,7 +34,7 @@ open(FILE,">test.pgn") or die "Couldn't open file:test.pgn: $!\n";
 print FILE $gametext or die "Couldn't write file:test.pgn: $!\n";
 close(FILE) or die "Couldn't close file:test.pgn: $!\n";
 
-open(FILE,">test.out") or die "Couldn't open file:test.pgn: $!\n";
+open(FILE,">test.out") or die "Couldn't open file:test.out: $!\n";
 my $stdout = select FILE;
 filter(
     source => 'test.pgn',
@@ -57,7 +57,7 @@ ok($output[7],"[ECO \"C00\"]\n");
 ok($output[8],"[NIC \"FR 1\"]\n");
 ok($output[9],"[Opening \"French: Labourdonnais variation\"]\n");
 
-open(FILE,">test.out") or die "Couldn't open file:test.pgn: $!\n";
+open(FILE,">test.out") or die "Couldn't open file:test.out: $!\n";
 my $stdout = select FILE;
 filter(
     source => 'test.pgn',
@@ -77,7 +77,7 @@ ok($output[32],"\t\t\t<COMMENT>this is a comment</COMMENT>\n");
 ok($output[127],"\t\t\t<MOVE>Bb5</MOVE>\n");
 ok($output[130],"\t\t<POSITION FONT=\"Chess Kingdom\" SIZE=\"3\">\n");
 
-open(FILE,">test.out") or die "Couldn't open file:test.pgn: $!\n";
+open(FILE,">test.out") or die "Couldn't open file:test.out: $!\n";
 my $stdout = select FILE;
 filter(
     source => 'test.pgn',
@@ -96,6 +96,16 @@ ok($output[10],"                      'Result' => '0-1'\n");
 ok($output[30],"                            'Epd' => 'rnbqkbnr/ppp2ppp/4p3/3p4/4PP2/8/PPPP2PP/RNBQKBNR w KQkq d6',\n");
 ok($output[39],"                            'Rav' => [\n");
 ok($output[280],"                            'Movetext' => 'Bb5'\n");
+
+open(FILE,">test.out") or die "Couldn't open file:test.out: $!\n";
+my $stdout = select FILE;
+my $data = filter (
+    source => 'test.pgn',
+    filtertype => 'DOM',
+    verbose => 0,
+);
+close(FILE);
+ok(ref($data), 'ARRAY');
 
 unlink('test.pgn') or die "Unable to unlink file:test.pgn $!\n";
 unlink('test.out') or die "Unable to unlink file:test.out $!\n";
