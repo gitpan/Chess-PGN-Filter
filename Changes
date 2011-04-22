@@ -58,3 +58,6 @@ Revision history for Perl extension Chess::PGN::Filter.
 0.13  Mon May 24 16:25:00 2004
 	- Synchronize version number across Filter.pm, readme and Changes.
 	- Change Gene's email to [gene@cpan.org].
+0.14  Fri Apr 22 03:35:43 2011
+        - Dust off.
+	- Change my email to current value.
