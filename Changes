@@ -61,3 +61,5 @@ Revision history for Perl extension Chess::PGN::Filter.
 0.14  Fri Apr 22 03:35:43 2011
         - Dust off.
 	- Change my email to current value.
+0.15  Fri Apr 22 07:08:56 2011
+        - Continue dusting--- this time to fix argument with PAUSE over 'World Writable' files

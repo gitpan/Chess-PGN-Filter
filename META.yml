@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Chess-PGN-Filter
-version:            0.14
+version:            0.15
 abstract:           Perl extension for converting PGN files to other formats.
 author:
     - Hugh S. Myers <hsmyers@sdragons.com>

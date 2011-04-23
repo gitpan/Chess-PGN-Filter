@@ -66,7 +66,7 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw(
     &filter
 );
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 
 sub filter {
